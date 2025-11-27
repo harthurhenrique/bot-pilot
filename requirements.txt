@@ -1,0 +1,12 @@
+requests>=2.31.0
+python-dotenv>=1.0.0
+pandas>=2.0.0
+aiohttp>=3.8.0
+botbuilder-core>=4.15.0
+botbuilder-ai>=4.15.0
+botframework-connector>=4.15.0
+botbuilder-schema>=4.15.0
+botbuilder-dialogs>=4.15.0
+botbuilder-integration-aiohttp>=4.15.0
+databricks-sdk>=0.12.0
+azure-identity>=1.15.0
