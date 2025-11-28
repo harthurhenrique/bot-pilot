@@ -1,22 +1,4 @@
 """
-Databricks Genie Bot
-
-Authors: Luiz Carrossoni Neto, Ryan Bates
-Revision: 1.2
-
-This script implements an experimental chatbot that interacts with Databricks' Genie API. The bot facilitates conversations with Genie,
-Databricks' AI assistant, through a chat interface.
-
-Note: This is experimental code and is not intended for production use.
-This is a test
-
-
-Update on May 2 to reflect Databricks API Changes https://www.databricks.com/blog/genie-conversation-apis-public-preview
-Update on Aug 5 to reflect Microsoft Azure no longer supporting MultiTenant bots
-Update on Oct 8 to add in user session management, user context, and feedback to the Genie API
-"""
-
-"""
 Startup Command:
 python3 -m aiohttp.web -H 0.0.0.0 -P 8000 app:init_func
 
@@ -67,7 +49,7 @@ CONFIG = DefaultConfig()
 
 class UserSession:
     """Represents a user session with email-based identification"""
-    def __init__(self, user_id: str, email: str, name: str = None):
+    def __init__(self, user_id: str, name: str = None):
         self.user_id = user_id  # Teams user ID
         #self.email = email
         self.name = name or "Usuario"
@@ -85,7 +67,6 @@ class UserSession:
         """Convert session to dictionary for logging/debugging"""
         return {
             "user_id": self.user_id,
-            "email": self.email,
             "name": self.name,
             "conversation_id": self.conversation_id,
             "created_at": self.created_at.isoformat(),
@@ -254,10 +235,10 @@ async def ask_genie(
 def process_query_results(answer_json: Dict) -> str:
     response = ""
     if "query_description" in answer_json and answer_json["query_description"]:
-        response += f"## Query Description\n\n{answer_json['query_description']}\n\n"
+        response += f"\n\n{answer_json['query_description']}\n\n"
 
     if "columns" in answer_json and "data" in answer_json:
-        response += "## Query Results\n\n"
+        response += "\n"
         columns = answer_json["columns"]
         data = answer_json["data"]
         if isinstance(columns, dict) and "columns" in columns:
@@ -292,9 +273,7 @@ def process_query_results(answer_json: Dict) -> str:
 class MyBot(ActivityHandler):
     def __init__(self):
         self.user_sessions: Dict[str, UserSession] = {}  # Maps Teams user ID to UserSession
-        #self.email_sessions: Dict[str, UserSession] = {}  # Maps email to UserSession for easy lookup
         self.message_feedback: Dict[str, Dict] = {}  # Track feedback for each message
-        #self.pending_email_input: Dict[str, bool] = {}  # Track users waiting for email input
 
     async def get_or_create_user_session(self, turn_context: TurnContext) -> UserSession:
         """Get or create a user session based on Teams user information"""
@@ -326,11 +305,6 @@ class MyBot(ActivityHandler):
         
         return session 
 
-    # def _is_valid_email(self, email: str) -> bool:
-    #     """Validate email address format"""
-    #     email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    #     return re.match(email_pattern, email) is not None
-
     def _is_conversation_timed_out(self, user_session: UserSession) -> bool:
         """Check if conversation has timed out (4 hours)"""
         if not user_session:
@@ -349,34 +323,17 @@ class MyBot(ActivityHandler):
             # Split by semicolon and strip whitespace
             questions = [q.strip() for q in questions_str.split(';') if q.strip()]
             return questions if questions else [
-                "What data is available?",
-                "Can you explain the datasets?",
-                "What questions should I ask?"
+                "Quais dados estão disponíveis?",
+                "Você pode explicar o conjunto de dados?",
+                "Quais perguntas posso fazer?"
             ]
         else:
             # Fallback default questions
             return [
-                "What data is available?",
-                "Can you explain the datasets?",
-                "What questions should I ask?"
+                "Quais dados estão disponíveis?",
+                "Você pode explicar o conjunto de dados?",
+                "Quais perguntas posso fazer?"
             ]
-
-    # async def _create_session_with_manual_email(self, turn_context: TurnContext, email: str) -> UserSession:
-    #     """Create a user session with manually provided email"""
-    #     user_id = turn_context.activity.from_property.id
-    #     user_name = getattr(turn_context.activity.from_property, 'name', None) or email.split('@')[0]
-        
-    #     # Create new user session
-    #     session = UserSession(user_id, email, user_name)
-    #     self.user_sessions[user_id] = session
-    #     self.email_sessions[email] = session
-        
-    #     # Remove from pending email input
-    #     if user_id in self.pending_email_input:
-    #         del self.pending_email_input[user_id]
-        
-    #     logger.info(f"Created user session with manual email for {session.get_display_name()}")
-    #     return session
 
     def create_feedback_card(self, message_id: str, user_id: str) -> Dict:
         """Create an Adaptive Card with thumbs up/down feedback buttons"""
@@ -386,7 +343,7 @@ class MyBot(ActivityHandler):
             "body": [
                 {
                     "type": "TextBlock",
-                    "text": "Was this response helpful?",
+                    "text": "Esta resposta foi útil?",
                     "size": "Small",
                     "color": "Default"
                 }
@@ -423,7 +380,7 @@ class MyBot(ActivityHandler):
             "body": [
                 {
                     "type": "TextBlock",
-                    "text": "✅ Thank you for your feedback!",
+                    "text": "✅ Obrigado pelo seu feedback!",
                     "size": "Small",
                     "color": "Good"
                 }
@@ -486,11 +443,11 @@ class MyBot(ActivityHandler):
                             await self._send_feedback_to_api(feedback_key, self.message_feedback[feedback_key])
                             
                             # Send thank you message
-                            await turn_context.send_activity("✅ Thank you for your feedback!")
+                            await turn_context.send_activity("✅ Obrigado pelo seu feedback!")
                             
                         except Exception as e:
                             logger.error(f"Failed to send feedback to Genie API: {str(e)}")
-                            await turn_context.send_activity("❌ Failed to submit feedback. Please try again.")
+                            await turn_context.send_activity("❌ Falha ao enviar feedback. Por favor, tente novamente.")
                         
                         return
                         
@@ -503,39 +460,6 @@ class MyBot(ActivityHandler):
             
         question = turn_context.activity.text.strip()
         user_id = turn_context.activity.from_property.id
-        
-        # Check if user is waiting to provide email manually
-        # if user_id in self.pending_email_input:
-        #     if question.lower() == "cancel":
-        #         # User wants to cancel email input
-        #         del self.pending_email_input[user_id]
-        #         await turn_context.send_activity(
-        #             "❌ **Email Input Cancelled**\n\n"
-        #             "You can try again later by typing any message. I'll ask for your email again if needed."
-        #         )
-        #         return
-        #     elif self._is_valid_email(question):
-        #         # User provided a valid email
-        #         user_session = await self._create_session_with_manual_email(turn_context, question)
-                
-        #         # Get sample questions based on space ID
-        #         sample_questions = self._get_sample_questions()
-        #         questions_text = "\n".join([f"- \"{q}\"" for q in sample_questions])
-                
-        #         await turn_context.send_activity(
-        #             f"✅ **Email Confirmed!**\n\n"
-        #             f"Welcome, {user_session.name}! I've successfully logged you in as {user_session.email}.\n\n"
-        #             f"Now you can ask me questions about your data. Try asking something like:\n"
-        #             f"{questions_text}"
-        #         )
-        #         return
-        #     else:
-        #         await turn_context.send_activity(
-        #             "❌ **Invalid Email Format**\n\n"
-        #             "Please provide a valid email address (e.g., john.doe@company.com).\n\n"
-        #             "Type `cancel` to stop the email input process."
-        #         )
-        #         return
         
         # Get or create user session
         user_session = await self.get_or_create_user_session(turn_context)
@@ -553,10 +477,10 @@ class MyBot(ActivityHandler):
         if user_session.conversation_id is None and user_session.user_id in self.user_sessions:
             # This means the conversation was reset due to timeout
             await turn_context.send_activity(
-                "⏰ **Conversation Reset**\n\n"
-                "Your previous conversation has expired (4+ hours of inactivity). "
-                "Starting fresh with a new conversation context.\n\n"
-                "I'm working on your answer now!"
+                "⏰ **Conversa Reiniciada**\n\n"
+                "Sua conversa anterior expirou (mais de 4 horas de inatividade). "
+                "Iniciando um novo contexto de conversa.\n\n"
+                "Estou processando sua resposta agora!"
             )
         
         # Process the message with user context
@@ -602,70 +526,25 @@ class MyBot(ActivityHandler):
         user_id = turn_context.activity.from_property.id
         
         if question.lower() in ["help", "/help", "commands", "/commands"]:
-            help_message = f"""🤖 **Databricks Genie Bot Information**
+            help_message = f"""🤖 **Informações do Databricks Genie Bot**
+**O que eu faço:**
+Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que você interaja com seus dados usando linguagem natural diretamente no Teams.
 
-**What I do:**
-I'm a Teams bot that connects to a Databricks Genie Space, allowing you to interact with your data through natural language queries directly in Teams.
+**Como eu funciono:**
+• Eu me conecto ao workspace Databricks usando as credenciais configuradas
+• O contexto da sua conversa é mantido entre as sessões para continuidade
+• Eu lembro do histórico da nossa conversa para dar respostas de acompanhamento melhores
 
-**How I work:**
-• I connect to your Databricks workspace using configured credentials
-• Your conversation context is maintained between sessions for continuity
-• I remember our conversation history to provide better follow-up responses
+**Gerenciamento de Sessão:**
+• As conversas reiniciam automaticamente após **4 horas** de inatividade
+• Você pode reiniciar manualmente a qualquer momento digitando `reset` ou `new chat`
 
-**Session Management:**
-• Conversations automatically reset after **4 hours** of inactivity
-• You can manually reset anytime by typing `reset` or `new chat`
-• Your email is used **only for logging queries in Genie** - not for AI processing
-
-**Available Commands:**
-• `help` - Show this information
-• `info` - Get help getting started
-• `reset` - Start a fresh conversation
-• `new chat` - Start a fresh conversation
-• `logout` - Clear your session
-
-**Need Help?**
-Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
-            
-#             await turn_context.send_activity(help_message)
-#         elif question.lower() in ["info", "/info"]:
-#             info_text = """🤖 **Welcome to the Genie Bot - User Logging Required**
-
-# I need your email address to log queries in Genie for tracking purposes.
-
-# **Quick Start:**
-# - Type `email` to provide your email address
-# - I'll validate the format and create your session
-
-# **What happens next:**
-# - Once logged in, you can ask me questions about your data
-# - I'll remember our conversation context
-# - You can ask follow-up questions
-
-# **Learn More:**
-# - Type `help` to learn more about the Genie Bot
-# - Type `info` for help getting started
-
-# Ready to get started? Type `email` to provide your email address!"""
-#             await turn_context.send_activity(info_text)
-#         elif question.lower() in ["email", "provide email", "enter email"]:
-#             # User wants to provide email manually
-#             self.pending_email_input[user_id] = True
-#             await turn_context.send_activity(
-#                 "📧 **User Logging in Genie**\n\n"
-#                 "Please provide your email address (e.g., captain.planet@company.com).\n\n"
-#                 "Type `cancel` if you want to stop this process."
-#             )
-#         else:
-#             await turn_context.send_activity(
-#                 "🤖 **Welcome to the Genie Bot**\n\n"
-#                 "I need your email address to log queries in Genie for tracking purposes.\n\n"
-#                 "**Quick Options:**\n"
-#                 "- Type `email` to provide your email address\n"
-#                 "- Type `help` to learn more about the Genie Bot\n"
-#                 "- Type `info` for help getting started\n\n"
-#                 "Once logged in, you'll be able to ask me questions about your data!"
-#             )
+**Comandos Disponíveis:**
+• `help` - Mostra informações detalhadas do bot
+• `info` - Ajuda a utilizar o bot
+• `reset` - Inicia uma nova conversa
+• `logout` - Limpa sua sessão
+"""
 
     async def _handle_special_commands(self, turn_context: TurnContext, question: str, user_session: UserSession) -> bool:
         """Handle special commands. Returns True if command was handled."""
@@ -699,80 +578,39 @@ Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
                     "Example: `/setuser John Doe`"
                 )
                 return True
-        
-        # Info command
-#         if question.lower() in ["info", "/info"]:
-#             is_emulator = turn_context.activity.channel_id == "emulator"
-            
-#             info_text = f"""🤖 **Databricks Genie Bot Commands**
-
-# **👤 User:** {user_session.get_display_name()}
-
-# **Start New Conversation:**
-# - `reset` or `new chat`
-
-# **User Commands:**
-# - `whoami` - Show your user information
-# - `help` - Show detailed bot information
-# - `logout` - Clear your session (you'll be re-identified on next message)"""
-
-#             if is_emulator:
-#                 info_text += """
-
-# **🔧 Emulator Testing Commands:**
-# - `/setuser Your Name` - Set your identity for testing
-# - Example: `/setuser John Doe`"""
-
-#             info_text += f"""
-
-# **General Usage:**
-# - Ask me any question about your data
-# - I'll remember our conversation context
-# - Use the commands above to start fresh when needed
-
-# **Current Status:** {"New conversation" if user_session.conversation_id is None else "Continuing existing conversation"}
-
-# **Need Help?**
-# Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
-            
-#             await turn_context.send_activity(info_text)
-#             return True
 
         # Info command
         if question.lower() in ["info", "/info"]:
             is_emulator = turn_context.activity.channel_id == "emulator"
             
             # Mudança: Usamos apenas .name para não depender de e-mail
-            info_text = f"""🤖 **Databricks Genie Bot Commands**
+            info_text = f"""
+🤖 **Comandos do Databricks Genie Bot**
+**👤 Usuário:** {user_session.name}
 
-**👤 User:** {user_session.name}
+**Iniciar Nova Conversa:**
+- `reset` ou `new chat`
 
-**Start New Conversation:**
-- `reset` or `new chat`
-
-**User Commands:**
-- `help` - Show detailed bot information
-- `logout` - Clear your session (you'll be re-identified automatically on next message)"""
+**Comandos de Usuário:**
+- `help` - Mostrar informações detalhadas do bot
+- `logout` - Limpar sua sessão (você será reidentificado automaticamente na próxima mensagem)
+"""
 
             # Se estiver no Emulator, mostramos o comando novo de trocar nome
             if is_emulator:
                 info_text += """
-
-**🔧 Emulator Testing Commands:**
-- `/setname Your Name` - Change your display name
-- Example: `/setname John Doe`"""
+                **🔧 Emulator Testing Commands:**
+                - `/setname Your Name` - Change your display name
+                - Example: `/setname John Doe`"""
 
             info_text += f"""
+**Uso Geral:**
+- Pergunte qualquer coisa sobre seus dados
+- Eu lembrarei do contexto da nossa conversa
+- Use os comandos acima para reiniciar quando necessário
 
-**General Usage:**
-- Ask me any question about your data
-- I'll remember our conversation context
-- Use the commands above to start fresh when needed
-
-**Current Status:** {"New conversation" if user_session.conversation_id is None else "Continuing existing conversation"}
-
-**Need Help?**
-Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
+**Status Atual:** {"Nova conversa" if user_session.conversation_id is None else "Continuando conversa existente"}
+            """
             
             await turn_context.send_activity(info_text)
             return True
@@ -781,45 +619,38 @@ Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
         if question.lower() in ["logout", "/logout", "sign out", "disconnect"]:
             # Clear user session
             user_id = user_session.user_id
-            #email = user_session.email
-            
+
             if user_id in self.user_sessions:
                 del self.user_sessions[user_id]
-            # if email in self.email_sessions:
-            #     del self.email_sessions[email]
-            
+
             await turn_context.send_activity(
-                f"👋 **Goodbye {user_session.name}!**\n\n"
-                "Your session has been cleared. You'll be re-identified when you send your next message."
+                f"👋 **Até logo, {user_session.name}!**\n\n"
+                "Sua sessão foi limpa. Você será reidentificado automaticamente ao enviar sua próxima mensagem."
             )
             return True
 
         # Help command
         if question.lower() in ["help", "/help", "commands", "/commands", "information", "about", "what is this"]:
-            help_message = f"""🤖 **Databricks Genie Bot Information**
+            help_message = f"""
+🤖 **Informações do Databricks Genie Bot**
+**O que eu faço:**
+Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que você interaja com seus dados usando linguagem natural diretamente no Teams.
 
-**What I do:**
-I'm a Teams bot that connects to a Databricks Genie Space, allowing you to interact with your data through natural language queries directly in Teams.
+**Como eu funciono:**
+• Eu me conecto ao workspace Databricks usando as credenciais configuradas
+• O contexto da sua conversa é mantido entre as sessões para continuidade
+• Eu lembro do histórico da nossa conversa para dar respostas de acompanhamento melhores
 
-**How I work:**
-• I connect to your Databricks workspace using configured credentials
-• Your conversation context is maintained between sessions for continuity
-• I remember our conversation history to provide better follow-up responses
+**Gerenciamento de Sessão:**
+• As conversas reiniciam automaticamente após **4 horas** de inatividade
+• Você pode reiniciar manualmente a qualquer momento digitando `reset` ou `new chat`
 
-**Session Management:**
-• Conversations automatically reset after **4 hours** of inactivity
-• You can manually reset anytime by typing `reset` or `new chat`
-• Your email is used **only for logging queries in Genie** - not for AI processing
-
-**Available Commands:**
-• `help` - Show this information
-• `info` - Get help getting started
-• `reset` - Start a fresh conversation
-• `new chat` - Start a fresh conversation
-• `logout` - Clear your session
-
-**Need Help?**
-Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
+**Comandos Disponíveis:**
+• `help` - Mostra informações detalhadas do bot
+• `info` - Ajuda a utilizar o bot
+• `reset` - Inicia uma nova conversa
+• `logout` - Limpa sua sessão
+            """
             
             await turn_context.send_activity(help_message)
             return True
@@ -834,8 +665,8 @@ Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
             user_session.conversation_id = None
             user_session.user_context.pop('last_conversation_id', None)
             await turn_context.send_activity(
-                f"🔄 **Starting a new conversation, {user_session.name}!**\n\n"
-                "You can now ask me anything about your data."
+                    f"🔄 **Iniciando uma nova conversa, {user_session.name}!**\n\n"
+                    "Você pode me perguntar qualquer coisa sobre seus dados."
             )
             return True
 
@@ -905,7 +736,7 @@ Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
                     logger.error(f"Failed to send feedback to Genie API: {str(e)}")
                     
                     # Return error card
-                    error_card = self.create_error_card("Failed to submit feedback. Please try again.")
+                    error_card = self.create_error_card("Falha ao enviar feedback. Por favor, tente novamente.")
                     
                     return InvokeResponse(
                         status_code=200,
@@ -1160,75 +991,18 @@ Contact the bot administrator at: {CONFIG.ADMIN_CONTACT_EMAIL}"""
                 # Try to get user information for personalized welcome
                 user_session = await self.get_or_create_user_session(turn_context)
                 
-                welcome_message = f"""🤖 **Welcome to the Databricks Genie Bot, {user_session.name}!**
+                welcome_message = f"""
+🤖 **Bem-vindo ao Databricks Genie Bot, {user_session.name}!**
+Eu posso ajudar você a analisar seus dados usando linguagem natural. Vou lembrar do contexto da nossa conversa para que você possa fazer perguntas de acompanhamento.
 
-I can help you analyze your data using natural language. I'll remember our conversation context, so you can ask follow-up questions.
+**Comandos Rápidos:**
+- `help` - Informações detalhadas do bot
+- `info` - Mostrar informações do bot
+- `reset` - Reiniciar conversa
 
-**Quick Commands:**
-- `help` - Detailed bot information
-- `info` - Show bot information
-- `reset` - Start fresh
-
-**Ready to get started?**
-Just ask me anything about your data!"""
-                
-#                 if user_session:
-#                     is_emulator = turn_context.activity.channel_id == "emulator"
-#                     welcome_message = f"""🤖 **Welcome to the Databricks Genie Bot, {user_session.name}!**
-
-# I can help you analyze your data using natural language. I'll remember our conversation context, so you can ask follow-up questions.
-
-# **👤 You're identified as:** {user_session.get_display_name()}"""
-
-#                     if is_emulator:
-#                         welcome_message += """
-
-# **🔧 Emulator Testing:**
-# You're using the Bot Emulator for testing. You can change your identity anytime using:
-# `/setuser your.email@company.com Your Name`"""
-
-#                     welcome_message += """
-
-# **Quick Commands:**
-# - `help` - Detailed bot information
-# - `info` - Get help getting started
-# - `reset` or `new chat` - Start fresh
-# - Just ask me anything about your data!
-
-# Ready to get started? Ask me a question!"""
-#                 else:
-#                     is_emulator = turn_context.activity.channel_id == "emulator"
-#                     welcome_message = """🤖 **Welcome to the Databricks Genie Bot!**
-
-# I can help you analyze your data using natural language. I'll remember our conversation context, so you can ask follow-up questions.
-
-# **📧 First-time setup:**
-# Please provide your email address to log queries in Genie for tracking purposes."""
-
-#                     if is_emulator:
-#                         welcome_message += """
-
-# **🔧 Emulator Testing:**
-# Since you're using the Bot Emulator, please set your identity using:
-# `/setuser your.email@company.com Your Name`
-# Example: `/setuser john.doe@company.com John Doe`"""
-#                     else:
-#                         welcome_message += """
-
-# **To get started:**
-# - Type `email` to provide your email address
-# - Type `info` for help getting started"""
-
-#                     welcome_message += """
-
-# **Quick Commands:**
-# - `help` - Detailed bot information
-# - `info` - Get help getting started 
-# - `reset` or `new chat` - Start fresh
-# - Ask me anything about your data!
-
-# Ready to get started? Type `email` to begin!"""
-                
+**Pronto para começar?**
+É só me perguntar qualquer coisa sobre seus dados!
+                """
                 await turn_context.send_activity(welcome_message)
 
 
