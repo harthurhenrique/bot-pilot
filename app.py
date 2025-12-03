@@ -48,10 +48,9 @@ CONFIG = DefaultConfig()
 
 
 class UserSession:
-    """Represents a user session with email-based identification"""
+    """Representa uma sessão de usuário"""
     def __init__(self, user_id: str, name: str = None):
         self.user_id = user_id  # Teams user ID
-        #self.email = email
         self.name = name or "Usuario"
         self.conversation_id = None
         self.created_at = datetime.now(timezone.utc)
@@ -60,11 +59,11 @@ class UserSession:
         self.user_context = {}
     
     def update_activity(self):
-        """Update the last activity timestamp"""
+        """Atualize o registro de data e hora da última atividade."""
         self.last_activity = datetime.now(timezone.utc)
     
     def to_dict(self):
-        """Convert session to dictionary for logging/debugging"""
+        """Converta a sessão em dicionário para registro/debug"""
         return {
             "user_id": self.user_id,
             "name": self.name,
@@ -75,57 +74,57 @@ class UserSession:
         }
     
     def get_display_name(self):
-        """Get a friendly display name for the user"""
-        return f"{self.name} ({self.uder_id})"
+        """Pega um nome de exibição amigável para o usuário."""
+        return f"{self.name} ({self.user_id})"
 
-# For local development with Bot Framework Emulator, use BotFrameworkAdapter
+# Para desenvolvimento local com o Bot Framework Emulator, use BotFrameworkAdapter
 if CONFIG.APP_ID and CONFIG.APP_PASSWORD:
-    # Production: Use CloudAdapter
+    # Produção: Use CloudAdapter
     ADAPTER = CloudAdapter(ConfigurationBotFrameworkAuthentication(CONFIG))
 else:
-    # Local testing: Use BotFrameworkAdapter with empty credentials
+    # Teste local: Use BotFrameworkAdapter com credenciais vazias
     SETTINGS = BotFrameworkAdapterSettings("", "")
     ADAPTER = BotFrameworkAdapter(SETTINGS)
 
 
 async def on_error(context: TurnContext, error: Exception):
-    # This check writes out errors to console log .vs. app insights.
-    # NOTE: In production environment, you should consider logging this to Azure
-    #       application insights.
-    logger.error(f"Unhandled error in bot: {str(error)}")
+    # Esta verificação escreve erros no console em vez de no Application Insights.
+    # NOTA: Em ambiente de produção, você deve considerar registrar isso no Azure
+    #       Application Insights.
+    logger.error(f"Erro inesperado no bot: {str(error)}")
     traceback.print_exc()
 
-    # Don't send error messages to users - just log the error
-    # This prevents the "bot encountered an error" message from appearing
-    logger.info("Error logged but not shown to user to avoid confusion")
+    # Não envie mensagens de erro para os usuários - apenas registre o erro
+    # Isso evita que a mensagem "bot encontrou um erro" apareça
+    logger.info("Erro registrado, mas não mostrado ao usuário para evitar confusão")
 
 
 ADAPTER.on_turn_error = on_error
 
-# Initialize Databricks client with error handling
+# Inicializar o cliente Databricks com tratamento de erros.
 def get_databricks_client():
-    """Get Databricks WorkspaceClient with proper error handling"""
+    """Obtenha o WorkspaceClient do Databricks com tratamento adequado de erros"""
     try:
-        # Debug environment variable loading
-        logger.info(f"Loading Databricks configuration...")
+        # Depurar carregamento de variáveis de ambiente
+        logger.info(f"Carregando configuração do Databricks...")
         logger.info(f"DATABRICKS_HOST: {CONFIG.DATABRICKS_HOST}")
         logger.info(f"DATABRICKS_TOKEN present: {bool(CONFIG.DATABRICKS_TOKEN)}")
         logger.info(f"DATABRICKS_TOKEN length: {len(CONFIG.DATABRICKS_TOKEN) if CONFIG.DATABRICKS_TOKEN else 0}")
         
         if not CONFIG.DATABRICKS_TOKEN:
-            raise ValueError("DATABRICKS_TOKEN environment variable is not set")
+            raise ValueError("DATABRICKS_TOKEN variável de ambiente não está definida.")
         
         client = WorkspaceClient(
             host=CONFIG.DATABRICKS_HOST, 
             token=CONFIG.DATABRICKS_TOKEN
         )
-        logger.info("Databricks client initialized successfully")
+        logger.info("Cliente Databricks inicializado com sucesso")
         return client
     except Exception as e:
-        logger.error(f"Failed to initialize Databricks client: {str(e)}")
+        logger.error(f"Falha ao inicializar o cliente Databricks: {str(e)}")
         raise
 
-# Initialize clients
+# Inicializar clientes
 workspace_client = get_databricks_client()
 genie_api = GenieAPI(workspace_client.api_client)
 
@@ -134,18 +133,18 @@ async def ask_genie(
     question: str, space_id: str, user_session: UserSession, conversation_id: Optional[str] = None
 ) -> tuple[str, str, str]:
     try:
-        # Add user context to the question for better tracking in Databricks
+        # Adicionar contexto do usuário à pergunta para melhor rastreamento no Databricks
         contextual_question = f"[{user_session.name}] {question}"
         
         loop = asyncio.get_running_loop()
         if conversation_id is None:
-            # Start a new conversation
+            # Iniciar uma nova conversa
             initial_message = await loop.run_in_executor(
                 None, genie_api.start_conversation_and_wait, space_id, contextual_question
             )
             conversation_id = initial_message.conversation_id
         else:
-            # Continue existing conversation with a new message
+            # Continuar conversa existente com uma nova mensagem
             initial_message = await loop.run_in_executor(
                 None, genie_api.create_message_and_wait, space_id, conversation_id, contextual_question
             )
@@ -204,29 +203,28 @@ async def ask_genie(
 
         return json.dumps({"message": message_content.content}), conversation_id, initial_message.message_id
     except Exception as e:
-        error_str = str(e).lower()  # Convert to lowercase for case-insensitive matching
-        error_original = str(e)  # Keep original for logging
-        logger.error(f"Error in ask_genie for user {user_session.get_display_name()}: {error_original}")
+        error_str = str(e).lower()  # Converter para minúsculas para correspondência sem distinção entre maiúsculas e minúsculas
+        error_original = str(e)  # Manter original para registro
+        logger.error(f"Erro em ask_genie para o usuário {user_session.get_display_name()}: {error_original}")
         
-        # Check for IP ACL blocking - look for "blocked" + "ip acl" pattern
-        # Error message format: "Source IP address: X.X.X.X is blocked by Databricks IP ACL for workspace"
+    
         if "ip acl" in error_str and "blocked" in error_str:
-            logger.error(f"IP ACL blocking detected: {error_original}")
+            logger.error(f"Bloqueio de IP ACL detectado: {error_original}")
             return (
                 json.dumps({
-                    "error": "⚠️ **IP Access Blocked**\n\n"
-                            "The bot's IP address is blocked by Databricks Account IP Access Control Lists (ACLs).\n\n"
-                            "**Administrator Action Required:**\n"
-                            "Please check the TROUBLESHOOTING.md documentation for instructions on adding "
-                            "the bot's IP address to your Databricks Account IP allow list."
+                    "error": "⚠️ **Acesso IP Bloqueado**\n\n"
+                            "O endereço IP do bot está bloqueado pelas Listas de Controle de Acesso (ACLs) de IP da Conta Databricks.\n\n"
+                            "**Ação do Administrador Necessária:**\n"
+                            "Verificar a documentação TROUBLESHOOTING.md para instruções sobre como adicionar "
+                            "o endereço IP do bot à lista de permissões de IP da sua Conta Databricks."
                 }),
                 conversation_id,
                 None,
             )
         
-        # Generic error for other cases
+        # Erro genérico para outros casos
         return (
-            json.dumps({"error": "An error occurred while processing your request."}),
+            json.dumps({"error": "Ocorreu um erro ao processar sua solicitação."}),
             conversation_id,
             None,
         )
@@ -259,41 +257,41 @@ def process_query_results(answer_json: Dict) -> str:
                     formatted_row.append(formatted_value)
                 response += "| " + " | ".join(formatted_row) + " |\n"
         else:
-            response += f"Unexpected column format: {columns}\n\n"
+            response += f"Formato de coluna inesperado: {columns}\n\n"
     elif "error" in answer_json:
         response += f"{answer_json['error']}\n\n"
     elif "message" in answer_json:
         response += f"{answer_json['message']}\n\n"
     else:
-        response += "No data available.\n\n"
+        response += "Nenhum dado disponível.\n\n"
 
     return response
 
 
 class MyBot(ActivityHandler):
     def __init__(self):
-        self.user_sessions: Dict[str, UserSession] = {}  # Maps Teams user ID to UserSession
-        self.message_feedback: Dict[str, Dict] = {}  # Track feedback for each message
+        self.user_sessions: Dict[str, UserSession] = {}  # Mapeia o ID do usuário do Teams para UserSession
+        self.message_feedback: Dict[str, Dict] = {}  # Rastreia feedback para cada mensagem
 
     async def get_or_create_user_session(self, turn_context: TurnContext) -> UserSession:
-        """Get or create a user session based on Teams user information"""
+        """Obter ou criar uma sessão de usuário com base nas informações do usuário do Teams"""
         user_id = turn_context.activity.from_property.id
         
-        # Check if we already have a session for this user
+        # Verificar se já temos uma sessão para este usuário
         if user_id in self.user_sessions:
             session = self.user_sessions[user_id]
             
-            # Check if conversation has timed out (4 hours)
+            # Verificar se a conversa expirou (4 horas)
             if self._is_conversation_timed_out(session):
                 logger.info(f"Conversation timed out for user {session.get_display_name()}, resetting conversation")
-                # Reset conversation ID and user context to start fresh
+                # Redefinir ID da conversa e contexto do usuário para começar do zero
                 session.conversation_id = None
                 session.user_context.pop('last_conversation_id', None)
-                # Update activity time
+                # Atualizar o tempo de atividade
                 session.update_activity()
                 return session
             else:
-                # Update activity time for active session
+                # Atualizar o tempo de atividade para sessão ativa
                 session.update_activity()
                 return session
         
@@ -306,7 +304,7 @@ class MyBot(ActivityHandler):
         return session 
 
     def _is_conversation_timed_out(self, user_session: UserSession) -> bool:
-        """Check if conversation has timed out (4 hours)"""
+        """Verificar se a conversa expirou (4 horas)"""
         if not user_session:
             return False
         
@@ -316,11 +314,11 @@ class MyBot(ActivityHandler):
         return time_since_last_activity > timeout_threshold
 
     def _get_sample_questions(self) -> List[str]:
-        """Get sample questions from configuration"""
-        # Parse sample questions from config (semicolon-delimited)
+        """Obter perguntas de exemplo da configuração"""
+        # Analisa as perguntas de exemplo da configuração (delimitadas por ponto e vírgula)
         questions_str = CONFIG.SAMPLE_QUESTIONS
         if questions_str:
-            # Split by semicolon and strip whitespace
+            # Divide por ponto e vírgula e remove espaços em branco (nas bordas)
             questions = [q.strip() for q in questions_str.split(';') if q.strip()]
             return questions if questions else [
                 "Quais dados estão disponíveis?",
@@ -328,7 +326,7 @@ class MyBot(ActivityHandler):
                 "Quais perguntas posso fazer?"
             ]
         else:
-            # Fallback default questions
+            # Perguntas padrão de fallback
             return [
                 "Quais dados estão disponíveis?",
                 "Você pode explicar o conjunto de dados?",
@@ -336,7 +334,7 @@ class MyBot(ActivityHandler):
             ]
 
     def create_feedback_card(self, message_id: str, user_id: str) -> Dict:
-        """Create an Adaptive Card with thumbs up/down feedback buttons"""
+        """Criar um Adaptive Card com botões de feedback positivo/negativo"""
         return {
             "type": "AdaptiveCard",
             "version": "1.3",
@@ -373,7 +371,7 @@ class MyBot(ActivityHandler):
         }
 
     def create_thank_you_card(self) -> Dict:
-        """Create a thank you card to replace feedback buttons after submission"""
+        """Criar um cartão de agradecimento para substituir os botões de feedback após o envio"""
         return {
             "type": "AdaptiveCard",
             "version": "1.3",
@@ -388,7 +386,7 @@ class MyBot(ActivityHandler):
         }
 
     def create_error_card(self, error_message: str) -> Dict:
-        """Create an error card to show when feedback submission fails"""
+        """Criar um cartão de erro para mostrar quando o envio de feedback falhar"""
         return {
             "type": "AdaptiveCard",
             "version": "1.3",
@@ -403,30 +401,30 @@ class MyBot(ActivityHandler):
         }
 
     async def on_message_activity(self, turn_context: TurnContext):
-        # Debug logging for all message activities
-        logger.info(f"Message activity type: {turn_context.activity.type}")
-        logger.info(f"Message activity name: {turn_context.activity.name}")
-        logger.info(f"Message activity value: {turn_context.activity.value}")
-        logger.info(f"Message activity text: {turn_context.activity.text}")
+        # Registro de depuração para todas as atividades de mensagem
+        logger.info(f"Tipo de atividade de mensagem: {turn_context.activity.type}")
+        logger.info(f"Nome da atividade de mensagem: {turn_context.activity.name}")
+        logger.info(f"Valor da atividade de mensagem: {turn_context.activity.value}")
+        logger.info(f"Texto da atividade de mensagem: {turn_context.activity.text}")
         
-        # Handle cases where text might be None (e.g., adaptive card interactions)
+        # Lida com casos onde o campo de texto pode ser None (ex: cliques em cartões)
         if not turn_context.activity.text:
-            # Check if this is an adaptive card button click
+            # Verifica se este é um clique em botão de cartão adaptativo
             if turn_context.activity.value and isinstance(turn_context.activity.value, dict):
                 action = turn_context.activity.value.get("action")
                 if action == "feedback":
-                    logger.info("Detected adaptive card feedback button click in message activity")
-                    # Handle as feedback submission
+                    logger.info("Detectado clique no botão de feedback do cartão adaptativo na atividade de mensagem")
+                    # Lida com o envio de feedback
                     try:
                         message_id = turn_context.activity.value.get("messageId")
                         user_id = turn_context.activity.value.get("userId")
                         feedback = turn_context.activity.value.get("feedback")
                         
                         if not all([message_id, user_id, feedback]):
-                            logger.error("Missing required feedback data in message activity")
+                            logger.error("Dados de feedback obrigatórios ausentes na atividade de mensagem")
                             return
                         
-                        # Store feedback data
+                        # Armazenar dados de feedback
                         feedback_key = f"{user_id}_{message_id}"
                         user_session = self.user_sessions.get(user_id)
                         self.message_feedback[feedback_key] = {
@@ -438,44 +436,44 @@ class MyBot(ActivityHandler):
                             "user_session": user_session.to_dict() if user_session else None
                         }
                         
-                        # Send feedback to Databricks Genie API
+                        # Enviar feedback para a API Databricks Genie
                         try:
                             await self._send_feedback_to_api(feedback_key, self.message_feedback[feedback_key])
                             
-                            # Send thank you message
+                            # Enviar mensagem de agradecimento
                             await turn_context.send_activity("✅ Obrigado pelo seu feedback!")
                             
                         except Exception as e:
-                            logger.error(f"Failed to send feedback to Genie API: {str(e)}")
+                            logger.error(f"Falha ao enviar feedback para a API Genie: {str(e)}")
                             await turn_context.send_activity("❌ Falha ao enviar feedback. Por favor, tente novamente.")
                         
                         return
                         
                     except Exception as e:
-                        logger.error(f"Error handling feedback in message activity: {str(e)}")
+                        logger.error(f"Erro ao lidar com feedback na atividade de mensagem: {str(e)}")
                         return
             
-            logger.info("Received message activity without text content, skipping")
+            logger.info("Atividade de mensagem recebida sem conteúdo de texto, ignorando")
             return
             
         question = turn_context.activity.text.strip()
         user_id = turn_context.activity.from_property.id
         
-        # Get or create user session
+        # Obter ou criar sessão do usuário
         user_session = await self.get_or_create_user_session(turn_context)
         
-        # If we couldn't create a session (no email), ask user to identify themselves
+        # Se não pudermos criar uma sessão, peça ao usuário para se identificar
         if not user_session:
             await self._handle_user_identification(turn_context, question)
             return
         
-        # Handle special commands first (before checking for timeout reset)
+        # Lida com comandos especiais primeiro (antes de verificar o reset por timeout)
         if await self._handle_special_commands(turn_context, question, user_session):
             return
         
-        # Check if conversation was reset due to timeout (only for data questions, not commands)
+        # Verificar se a conversa foi reiniciada devido ao tempo limite (apenas para perguntas de dados, não comandos)
         if user_session.conversation_id is None and user_session.user_id in self.user_sessions:
-            # This means the conversation was reset due to timeout
+            # Isso significa que a conversa foi reiniciada devido ao tempo limite
             await turn_context.send_activity(
                 "⏰ **Conversa Reiniciada**\n\n"
                 "Sua conversa anterior expirou (mais de 4 horas de inatividade). "
@@ -483,13 +481,13 @@ class MyBot(ActivityHandler):
                 "Estou processando sua resposta agora!"
             )
         
-        # Process the message with user context
+        # Processa a mensagem mantendo o contexto da conversa
         try:
             answer, new_conversation_id, genie_message_id = await ask_genie(
                 question, CONFIG.DATABRICKS_SPACE_ID, user_session, user_session.conversation_id
             )
             
-            # Update user session with new conversation ID and store the specific message ID for feedback
+            # Atualizar sessão do usuário com novo ID de conversa e armazenar o ID da mensagem específica para feedback
             user_session.conversation_id = new_conversation_id
             user_session.user_context['last_question'] = question
             user_session.user_context['last_response_time'] = datetime.now(timezone.utc).isoformat()
@@ -498,31 +496,31 @@ class MyBot(ActivityHandler):
             answer_json = json.loads(answer)
             response = process_query_results(answer_json)
             
-            # Add user context to response
+            # Adiciona o contexto do usuário à resposta
             response = f"**👤 {user_session.name}**\n\n{response}"
 
-            # Send the main response
+            # Enviar a resposta principal
             await turn_context.send_activity(response)
             
-            # Send feedback card as a separate message
+            # Enviar cartão de feedback como uma mensagem separada
             await self._send_feedback_card(turn_context, user_session)
             
         except json.JSONDecodeError:
             await turn_context.send_activity(
-                f"**👤 {user_session.name}**\n\n❌ Failed to decode response from the server."
+                f"**👤 {user_session.name}**\n\n❌ Falha ao decodificar a resposta do servidor."
             )
-            # Send feedback card for error responses too
+            # Enviar cartão de feedback para respostas com erro também
             await self._send_feedback_card(turn_context, user_session)
         except Exception as e:
-            logger.error(f"Error processing message for {user_session.get_display_name()}: {str(e)}")
+            logger.error(f"Erro ao processar mensagem para {user_session.get_display_name()}: {str(e)}")
             await turn_context.send_activity(
-                f"**👤 {user_session.name}**\n\n❌ An error occurred while processing your request."
+                f"**👤 {user_session.name}**\n\n❌ Ocorreu um erro ao processar sua solicitação."
             )
-            # Send feedback card for error responses too
+            # Enviar cartão de feedback para respostas com erro também
             await self._send_feedback_card(turn_context, user_session)
 
     async def _handle_user_identification(self, turn_context: TurnContext, question: str):
-        """Handle cases where user email is not available"""
+        """Lida com casos onde o email do usuário não está disponível"""
         user_id = turn_context.activity.from_property.id
         
         if question.lower() in ["help", "/help", "commands", "/commands"]:
@@ -547,39 +545,34 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
 """
 
     async def _handle_special_commands(self, turn_context: TurnContext, question: str, user_session: UserSession) -> bool:
-        """Handle special commands. Returns True if command was handled."""
+        """Trata comandos especiais. Retorna True se o comando foi processado."""
         
-        # Special emulator command for setting identity
+        # Comando especial do emulador para configuração de usuário
         if question.lower().startswith("/setuser ") and turn_context.activity.channel_id == "emulator":
-            # Format: /setuser john.doe@company.com John Doe
             parts = question.split(" ", 1)
             if len(parts) >= 2:
-                #email = parts[1]
-                #name = parts[1] if len(parts) > 2 else email.split('@')[0]
                 new_name = parts[1]
                 user_session.name = new_name
                 # Update existing session or create new one
                 user_id = turn_context.activity.from_property.id
                 session = UserSession(user_id, new_name)
                 self.user_sessions[user_id] = session
-                #self.email_sessions[email] = session
                 
                 await turn_context.send_activity(
-                    f"✅ **Identity Updated!**\n\n"
-                    f"**Name:** {session.name}\n"
-                    #f"**Email:** {session.email}\n\n"
-                    f"You can now ask me questions about your data!"
+                    f"✅ **Identidade Atualizada!**\n\n"
+                    f"**Nome:** {session.name}\n"
+                    f"Você agora pode me fazer perguntas sobre seus dados!"
                 )
                 return True
             else:
                 await turn_context.send_activity(
-                    "❌ **Invalid format**\n\n"
-                    "Use: `/setuser Your Name`\n"
-                    "Example: `/setuser John Doe`"
+                    "❌ **Formato inválido**\n\n"
+                    "Use: `/setuser Seu Nome`\n"
+                    "Exemplo: `/setuser João Silva`"
                 )
                 return True
 
-        # Info command
+        # Comando info
         if question.lower() in ["info", "/info"]:
             is_emulator = turn_context.activity.channel_id == "emulator"
             
@@ -599,9 +592,9 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             # Se estiver no Emulator, mostramos o comando novo de trocar nome
             if is_emulator:
                 info_text += """
-                **🔧 Emulator Testing Commands:**
-                - `/setname Your Name` - Change your display name
-                - Example: `/setname John Doe`"""
+                **Comandos de Teste do Emulador:**
+                - `/setname Seu Nome` - Altere seu nome de exibição
+                - Exemplo: `/setname João Silva`"""
 
             info_text += f"""
 **Uso Geral:**
@@ -615,9 +608,9 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             await turn_context.send_activity(info_text)
             return True
 
-        # Logout command
+        # Comando logout
         if question.lower() in ["logout", "/logout", "sign out", "disconnect"]:
-            # Clear user session
+            # Limpar sessão do usuário
             user_id = user_session.user_id
 
             if user_id in self.user_sessions:
@@ -629,7 +622,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             )
             return True
 
-        # Help command
+        # Comando help
         if question.lower() in ["help", "/help", "commands", "/commands", "information", "about", "what is this"]:
             help_message = f"""
 🤖 **Informações do Databricks Genie Bot**
@@ -655,7 +648,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             await turn_context.send_activity(help_message)
             return True
 
-        # New conversation triggers
+        # Gatilhos para nova conversa
         new_conversation_triggers = [
             "new conversation", "new chat", "start over", "reset", "clear conversation",
             "/new", "/reset", "/clear", "/start", "begin again", "fresh start"
@@ -673,27 +666,27 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
         return False
 
     async def on_invoke_activity(self, turn_context: TurnContext) -> InvokeResponse:
-        """Handle invoke activities (like adaptive card button clicks)"""
+        """Lida com invocações (como cliques em botões de cartões)"""
         try:
-            logger.info(f"Received invoke activity: {turn_context.activity.name}")
-            logger.info(f"Invoke activity value: {turn_context.activity.value}")
+            logger.info(f"Invocação de atividade recebida: {turn_context.activity.name}")
+            logger.info(f"Valor da atividade de invocação: {turn_context.activity.value}")
             
-            # Check if this is an adaptive card invoke
+            # Verifica se esta é uma invocação de cartão adaptativo
             if turn_context.activity.name == "adaptiveCard/action":
                 invoke_value = turn_context.activity.value
-                logger.info(f"Processing adaptive card invoke with value: {invoke_value}")
+                logger.info(f"Processando invocação de cartão adaptativo com valor: {invoke_value}")
                 return await self.on_adaptive_card_invoke(turn_context, invoke_value)
             
-            # Handle other invoke activities if needed
-            logger.info(f"Unhandled invoke activity type: {turn_context.activity.name}")
+            # Lida com outras atividades de invocação, se necessário
+            logger.info(f"Tipo de atividade de invocação não tratado: {turn_context.activity.name}")
             return InvokeResponse(status_code=200, body="OK")
             
         except Exception as e:
-            logger.error(f"Error handling invoke activity: {str(e)}")
-            return InvokeResponse(status_code=500, body="Error processing invoke activity")
+            logger.error(f"Erro ao lidar com a invocação de atividade: {str(e)}")
+            return InvokeResponse(status_code=500, body="Erro ao processar a atividade de invocação")
 
     async def on_adaptive_card_invoke(self, turn_context: TurnContext, invoke_value: Dict) -> InvokeResponse:
-        """Handle Adaptive Card button clicks (feedback submission)"""
+        """Lida com cliques em botões de Cartão Adaptativo (envio de feedback)"""
         try:
             action = invoke_value.get("action")
             
@@ -703,9 +696,9 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 feedback = invoke_value.get("feedback")
                 
                 if not all([message_id, user_id, feedback]):
-                    return InvokeResponse(status_code=400, body="Missing required feedback data")
+                    return InvokeResponse(status_code=400, body="Dados de feedback obrigatórios ausentes")
                 
-                # Store feedback data
+                # Armazenar dados de feedback
                 feedback_key = f"{user_id}_{message_id}"
                 user_session = self.user_sessions.get(user_id)
                 self.message_feedback[feedback_key] = {
@@ -717,11 +710,11 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                     "user_session": user_session.to_dict() if user_session else None
                 }
                 
-                # Send feedback to Databricks Genie API
+                # Enviar feedback para a API do Databricks Genie
                 try:
                     await self._send_feedback_to_api(feedback_key, self.message_feedback[feedback_key])
                     
-                    # Return updated card with thank you message
+                    # Retornar cartão atualizado com mensagem de agradecimento
                     updated_card = self.create_thank_you_card()
                     
                     return InvokeResponse(
@@ -733,9 +726,9 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                         }
                     )
                 except Exception as e:
-                    logger.error(f"Failed to send feedback to Genie API: {str(e)}")
+                    logger.error(f"Falha ao enviar feedback para a API do Genie: {str(e)}")
                     
-                    # Return error card
+                    # Retornar cartão de erro
                     error_card = self.create_error_card("Falha ao enviar feedback. Por favor, tente novamente.")
                     
                     return InvokeResponse(
@@ -754,16 +747,16 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             return InvokeResponse(status_code=500, body="Error processing feedback")
 
     async def _send_feedback_to_api(self, feedback_key: str, feedback_data: Dict):
-        """Send feedback to Databricks Genie send message feedback API"""
+        """Envia feedback para a API de feedback de mensagens do Databricks Genie"""
         try:
             logger.info(f"Feedback received: {feedback_data}")
             
-            # Check if Genie feedback API is enabled
+            # Verificar se a API de feedback do Genie está habilitada
             if not CONFIG.ENABLE_GENIE_FEEDBACK_API:
-                logger.info("Genie feedback API is disabled, skipping API call")
+                logger.info("API de feedback do Genie está desabilitada, pulando chamada de API")
                 return
             
-            # Extract the message ID and user session info
+            # Extrair o ID da mensagem e informações da sessão do usuário
             message_id = feedback_data.get("message_id")
             user_id = feedback_data.get("user_id")
             feedback_type = feedback_data.get("feedback")
@@ -773,18 +766,18 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 logger.error(f"Missing required feedback data: {feedback_data}")
                 return
             
-            # Get the user session to access conversation_id
+            # Obter a sessão do usuário para acessar conversation_id
             user_session = self.user_sessions.get(user_id)
             if not user_session or not user_session.conversation_id:
-                logger.error(f"No active conversation found for user {user_id}")
+                logger.error(f"Nenhuma conversa ativa encontrada para o usuário {user_id}")
                 return
             
-            # Convert feedback type to Genie API format
+            # Converter o tipo de feedback para o formato da API do Genie
             # positive -> POSITIVE, negative -> NEGATIVE
             genie_feedback_type = "POSITIVE" if feedback_type == "positive" else "NEGATIVE"
             
-            # Call the Databricks Genie send message feedback API
-            logger.info(f"Sending feedback for specific message ID: {message_id} in conversation: {user_session.conversation_id}")
+            # Chamar a API de feedback de mensagem do Databricks Genie
+            logger.info(f"Enviando feedback para o ID da mensagem específica: {message_id} na conversa: {user_session.conversation_id}")
             await self._send_genie_feedback(
                 space_id=CONFIG.DATABRICKS_SPACE_ID,
                 conversation_id=user_session.conversation_id,
@@ -792,20 +785,18 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 feedback_type=genie_feedback_type
             )
             
-            logger.info(f"Feedback sent successfully to Genie API for {feedback_key}")
+            logger.info(f"Feedback enviado com sucesso para a API do Genie para {feedback_key}")
             
         except Exception as e:
-            logger.error(f"Error sending feedback to Genie API: {str(e)}")
+            logger.error(f"Erro ao enviar feedback para a API do Genie: {str(e)}")
             raise
 
     async def _send_genie_feedback(self, space_id: str, conversation_id: str, message_id: str, feedback_type: str):
-        """Send feedback to Databricks Genie API"""
+        """Envia feedback para a API do Databricks Genie"""
         try:
             loop = asyncio.get_running_loop()
             
-            # Use the Genie API to send message feedback
-            # Note: The exact method name may vary based on the API version
-            # This assumes the method is called send_message_feedback
+            # Use the Genie API to send feedback for a message
             await loop.run_in_executor(
                 None,
                 genie_api.send_message_feedback,
@@ -815,28 +806,28 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 feedback_type
             )
             
-            logger.info(f"Successfully sent {feedback_type} feedback for message {message_id} in conversation {conversation_id}")
+            logger.info(f"Feedback {feedback_type} enviado com sucesso para a mensagem {message_id} na conversa {conversation_id}")
             
         except AttributeError:
-            # If send_message_feedback method doesn't exist, try alternative method names
-            logger.warning(f"send_message_feedback method not found, trying alternative approach")
+            # Se o método send_message_feedback não existir, tenta nomes de métodos alternativos
+            logger.warning(f"Método send_message_feedback não encontrado, tentando abordagem alternativa")
             await self._send_genie_feedback_alternative(space_id, conversation_id, message_id, feedback_type)
         except Exception as e:
-            logger.error(f"Error calling Genie API for feedback: {str(e)}")
+            logger.error(f"Erro ao chamar a API do Genie para feedback: {str(e)}")
             raise
 
     async def _send_genie_feedback_alternative(self, space_id: str, conversation_id: str, message_id: str, feedback_type: str):
-        """Alternative method to send feedback if the direct API method is not available"""
+        """Método alternativo para enviar feedback se o método direto da API não estiver disponível"""
         try:
-            # If the direct API method is not available, we can use the workspace client
-            # to make a direct HTTP request to the Genie feedback endpoint
+            # Se o método direto da API não estiver disponível, podemos usar o cliente do workspace
+            # para fazer uma requisição HTTP direta ao endpoint de feedback do Genie
             import aiohttp
             
-            # Construct the API endpoint URL
+            # Construir a URL do endpoint da API
             base_url = CONFIG.DATABRICKS_HOST.rstrip('/')
             api_endpoint = f"{base_url}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/feedback"
             
-            # Prepare the request payload
+            # Preparar o payload da requisição
             payload = {
                 "rating": feedback_type
             }
@@ -847,7 +838,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 "Content-Type": "application/json"
             }
             
-            # Make the HTTP request
+            # Faz a requisição HTTP
             logger.info(f"Sending feedback to: {api_endpoint}")
             logger.info(f"Payload: {payload}")
             
@@ -855,25 +846,25 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 async with session.post(api_endpoint, json=payload, headers=headers) as response:
                     response_text = await response.text()
                     if response.status == 200:
-                        logger.info(f"Successfully sent {feedback_type} feedback via HTTP API")
+                        logger.info(f"Feedback {feedback_type} enviado com sucesso via API HTTP")
                     else:
-                        logger.error(f"Failed to send feedback via HTTP API: {response.status} - {response_text}")
+                        logger.error(f"Falha ao enviar feedback via API HTTP: {response.status} - {response_text}")
                         raise Exception(f"HTTP {response.status}: {response_text}")
                         
         except Exception as e:
-            logger.error(f"Error in alternative feedback method: {str(e)}")
+            logger.error(f"Erro no método alternativo de feedback: {str(e)}")
             raise
 
     async def _get_last_genie_message_id(self, conversation_id: str) -> Optional[str]:
-        """Get the last message ID from the Genie conversation"""
+        """Obter o ID da última mensagem da conversa do Genie"""
         try:
             if not conversation_id:
                 return None
                 
             loop = asyncio.get_running_loop()
-            # Try different method names for listing messages
+            # Tenta nomes de métodos diferentes para listar mensagens
             try:
-                # Try list_conversation_messages first
+                # Tenta list_conversation_messages primeiro
                 messages = await loop.run_in_executor(
                     None,
                     genie_api.list_conversation_messages,
@@ -882,7 +873,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 )
             except AttributeError:
                 try:
-                    # Try get_conversation_messages
+                    # Tenta get_conversation_messages
                     messages = await loop.run_in_executor(
                         None,
                         genie_api.get_conversation_messages,
@@ -890,85 +881,85 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                         conversation_id,
                     )
                 except AttributeError:
-                    # If neither method exists, return None and log a warning
-                    logger.warning("No suitable method found for listing Genie conversation messages")
+                    # Se nenhum dos métodos existir, retorna None e registra um aviso
+                    logger.warning("Nenhum método adequado encontrado para listar mensagens da conversa do Genie")
                     return None
             
-            # Handle different response types
+            # Lida com diferentes tipos de resposta
             if messages:
                 logger.info(f"Messages response type: {type(messages)}")
                 logger.info(f"Messages response attributes: {dir(messages)}")
                 
-                # Check if it's a response object with messages property
+                # Verifica se é um objeto de resposta com a propriedade messages
                 if hasattr(messages, 'messages') and messages.messages:
                     logger.info(f"Found {len(messages.messages)} messages in response.messages")
-                    # Sort messages by timestamp to get the most recent one
+                    # Ordena as mensagens por carimbo de data/hora para obter a mais recente
                     try:
                         sorted_messages = sorted(messages.messages, key=lambda x: getattr(x, 'created_at', 0), reverse=True)
                         if sorted_messages:
                             latest_message = sorted_messages[0]
-                            logger.info(f"Latest message ID: {latest_message.message_id}")
+                            logger.info(f"ID da última mensagem: {latest_message.message_id}")
                             return latest_message.message_id
                     except Exception as e:
-                        logger.warning(f"Could not sort messages by timestamp: {e}, using last message")
+                        logger.warning(f"Não foi possível ordenar as mensagens por carimbo de data/hora: {e}, usando a última mensagem")
                         return messages.messages[-1].message_id
-                # Check if it's a list-like object
+                # Verifica se é um objeto semelhante a uma lista
                 elif hasattr(messages, '__len__') and len(messages) > 0:
                     logger.info(f"Found {len(messages)} messages in response (list-like)")
-                    # Sort messages by timestamp to get the most recent one
+                    # Ordena as mensagens por carimbo de data/hora para obter a mais recente
                     try:
                         sorted_messages = sorted(messages, key=lambda x: getattr(x, 'created_at', 0), reverse=True)
                         if sorted_messages:
                             latest_message = sorted_messages[0]
-                            logger.info(f"Latest message ID: {latest_message.message_id}")
+                            logger.info(f"ID da última mensagem: {latest_message.message_id}")
                             return latest_message.message_id
                     except Exception as e:
-                        logger.warning(f"Could not sort messages by timestamp: {e}, using last message")
+                        logger.warning(f"Não foi possível ordenar as mensagens por carimbo de data/hora: {e}, usando a última mensagem")
                         return messages[-1].message_id
-                # Check if it's iterable
+                # Verifica se é iterável
                 elif hasattr(messages, '__iter__'):
                     message_list = list(messages)
                     if message_list:
                         logger.info(f"Found {len(message_list)} messages in response (iterable)")
-                        # Sort messages by timestamp to get the most recent one
+                        # Ordena as mensagens por carimbo de data/hora para obter a mais recente
                         try:
                             sorted_messages = sorted(message_list, key=lambda x: getattr(x, 'created_at', 0), reverse=True)
                             if sorted_messages:
                                 latest_message = sorted_messages[0]
-                                logger.info(f"Latest message ID: {latest_message.message_id}")
+                                logger.info(f"ID da última mensagem: {latest_message.message_id}")
                                 return latest_message.message_id
                         except Exception as e:
-                            logger.warning(f"Could not sort messages by timestamp: {e}, using last message")
+                            logger.warning(f"Não foi possível ordenar as mensagens por carimbo de data/hora: {e}, usando a última mensagem")
                             return message_list[-1].message_id
                 else:
-                    logger.warning(f"Unable to extract messages from response of type {type(messages)}")
+                    logger.warning(f"Não foi possível extrair mensagens da resposta do tipo {type(messages)}")
             return None
             
         except Exception as e:
-            logger.error(f"Error getting last Genie message ID: {str(e)}")
+            logger.error(f"Erro ao obter o ID da última mensagem do Genie: {str(e)}")
             return None
 
     async def _send_feedback_card(self, turn_context: TurnContext, user_session: UserSession):
-        """Send a feedback card after a bot response"""
+        """Enviar um cartão de feedback após uma resposta do bot"""
         try:
-            # Check if feedback cards are enabled
+            # Verifica se os cartões de feedback estão habilitados
             if not CONFIG.ENABLE_FEEDBACK_CARDS:
                 return
                 
-            # Use the actual Genie message ID if available, otherwise generate a fallback
+            # Use o ID real da mensagem do Genie, se disponível, caso contrário, gere um fallback
             genie_message_id = user_session.user_context.get('last_genie_message_id')
             if genie_message_id:
                 message_id = genie_message_id
-                logger.info(f"Creating feedback card for specific Genie message ID: {message_id}")
+                logger.info(f"Criando cartão de feedback para o ID específico da mensagem do Genie: {message_id}")
             else:
                 # Fallback to generated ID if we don't have the Genie message ID
                 message_id = f"msg_{int(datetime.now().timestamp() * 1000)}"
-                logger.warning(f"No Genie message ID available for user {user_session.get_display_name()}, using fallback: {message_id}")
+                logger.warning(f"Nenhum ID de mensagem do Genie disponível para o usuário {user_session.get_display_name()}, usando fallback: {message_id}")
             
-            # Create feedback card
+            # Cria o cartão de feedback
             feedback_card = self.create_feedback_card(message_id, user_session.user_id)
             
-            # Send the card as an attachment
+            # Envia o cartão como um anexo
             activity = Activity(
                 type=ActivityTypes.message,
                 attachments=[{
@@ -980,15 +971,14 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             await turn_context.send_activity(activity)
             
         except Exception as e:
-            logger.error(f"Error sending feedback card: {str(e)}")
+            logger.error(f"Erro ao enviar o cartão de feedback: {str(e)}")
 
     async def on_members_added_activity(
         self, members_added: List[ChannelAccount], turn_context: TurnContext
     ):
-        ##print("Members added",members_added)
         for member in members_added:
             if member.id != turn_context.activity.recipient.id:
-                # Try to get user information for personalized welcome
+                # Tenta obter informações do usuário para uma recepção personalizada
                 user_session = await self.get_or_create_user_session(turn_context)
                 
                 welcome_message = f"""
@@ -1001,8 +991,7 @@ Eu posso ajudar você a analisar seus dados usando linguagem natural. Vou lembra
 - `reset` - Reiniciar conversa
 
 **Pronto para começar?**
-É só me perguntar qualquer coisa sobre seus dados!
-                """
+É só me perguntar qualquer coisa sobre seus dados!"""
                 await turn_context.send_activity(welcome_message)
 
 
@@ -1019,7 +1008,7 @@ async def messages(req: Request) -> Response:
     auth_header = req.headers.get("Authorization", "")
 
     try:
-        # Handle different adapter types
+        # Lida com diferentes tipos de adaptadores
         if hasattr(ADAPTER, 'process'):
             # CloudAdapter
             response = await ADAPTER.process(req, BOT)
@@ -1033,7 +1022,7 @@ async def messages(req: Request) -> Response:
                 return json_response(data=response.body, status=response.status)
             return Response(status=201)
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.error(f"Erro ao processar a requisição: {str(e)}")
         return Response(status=500)
 
 
