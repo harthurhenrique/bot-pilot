@@ -524,13 +524,12 @@ class MyBot(ActivityHandler):
         user_id = turn_context.activity.from_property.id
         
         if question.lower() in ["help", "/help", "commands", "/commands"]:
-            help_message = f"""🤖 **Informações do Databricks Genie Bot**
+            help_message = f"""🤖 **Informações do Bot de Funil de Vendas**
 **O que eu faço:**
 Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que você interaja com seus dados usando linguagem natural diretamente no Teams.
 
 **Como eu funciono:**
 • Eu me conecto ao workspace Databricks usando as credenciais configuradas
-• O contexto da sua conversa é mantido entre as sessões para continuidade
 • Eu lembro do histórico da nossa conversa para dar respostas de acompanhamento melhores
 
 **Gerenciamento de Sessão:**
@@ -578,7 +577,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
             
             # Mudança: Usamos apenas .name para não depender de e-mail
             info_text = f"""
-🤖 **Comandos do Databricks Genie Bot**
+🤖 **Comandos do Bot de Funil de Vendas**
 **👤 Usuário:** {user_session.name}
 
 **Iniciar Nova Conversa:**
@@ -625,7 +624,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
         # Comando help
         if question.lower() in ["help", "/help", "commands", "/commands", "information", "about", "what is this"]:
             help_message = f"""
-🤖 **Informações do Databricks Genie Bot**
+🤖 **Informações do Bot de Funil de Vendas**
 **O que eu faço:**
 Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que você interaja com seus dados usando linguagem natural diretamente no Teams.
 
@@ -982,7 +981,7 @@ Sou um bot do Teams que se conecta a um Databricks Genie Space, permitindo que v
                 user_session = await self.get_or_create_user_session(turn_context)
                 
                 welcome_message = f"""
-🤖 **Bem-vindo ao Databricks Genie Bot, {user_session.name}!**
+🤖 **Bem-vindo ao Bot de Funil de Vendas, {user_session.name}!**
 Eu posso ajudar você a analisar seus dados usando linguagem natural. Vou lembrar do contexto da nossa conversa para que você possa fazer perguntas de acompanhamento.
 
 **Comandos Rápidos:**
